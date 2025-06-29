@@ -1,0 +1,7 @@
+version: '3.8'
+
+services:  
+
+  # The PaddleOCR Microservice
+  ocr_service:
+    build: .
