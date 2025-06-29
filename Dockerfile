@@ -28,7 +28,7 @@ COPY requirements.txt .
 # Install Python packages from requirements.txt.
 # Then, install the specific paddlex[ocr] extras group.
 RUN pip install --no-cache-dir -r requirements.txt
-RUN pip install --no-cache-dir "paddlex[ocr]"
+# RUN pip install --no-cache-dir "paddlex[ocr]"
 
 # --- Application Code ---
 # Now, copy the rest of your application code into the container.

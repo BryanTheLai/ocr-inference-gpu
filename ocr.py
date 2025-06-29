@@ -10,7 +10,8 @@ class OCRService:
     def __init__(self, pipeline_config: str = "./configs/pipelines/PP-StructureV3.yaml"):
         self.pipeline = create_pipeline(
             pipeline=pipeline_config,
-            show_log=False  # <-- ADD THIS LINE to suppress verbose output
+            device="gpu",
+            show_log=True
             )
 
     def _is_pdf(self, file_content: bytes) -> bool:

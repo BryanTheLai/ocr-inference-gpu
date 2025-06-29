@@ -1,7 +1,19 @@
+# This file should be in your project's root directory.
 version: '3.8'
 
-services:  
-
-  # The PaddleOCR Microservice
-  ocr_service:
+services:
+  ocr-inference-gpu:
     build: .
+    ports:
+      - "8001:8001"
+    # --- THIS IS THE FIX ---
+    # This section explicitly grants the container access to all available GPUs.
+    # It's the docker-compose equivalent of the `--gpus all` flag.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    # --- END OF FIX ---
