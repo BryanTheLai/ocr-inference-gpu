@@ -5,6 +5,7 @@ from PIL import Image
 import pymupdf as fitz
 import os
 import mimetypes
+import time
 
 class OCRService:
     def __init__(self, pipeline_config: str = "./configs/pipelines/PP-StructureV3.yaml"):
@@ -84,36 +85,60 @@ class OCRService:
 
     def process_file_content(self, file_content: bytes, mime_type: Optional[str] = None) -> List[Dict[str, Any]]:
         print("[DEBUG] Entered process_file_content")
+        start_total = time.time()
         all_detections = []
         if self._is_pdf(file_content):
             print("[DEBUG] Detected PDF input")
+            t_pdf2img = time.time()
             images = self._pdf_to_images(file_content)
+            print(f"[DEBUG] PDF has {len(images)} pages. PDF to images took {time.time() - t_pdf2img:.2f} seconds")
             for page_num, image in enumerate(images, 1):
-                all_detections.extend(self._process_image_with_pipeline(image, page_num))
+                start_page = time.time()
+                t_save = time.time()
+                # Save temp image and run pipeline
+                detections = self._process_image_with_pipeline(image, page_num)
+                t_pipeline = time.time()
+                all_detections.extend(detections)
+                print(f"[DEBUG] Page {page_num}: pipeline took {t_pipeline - t_save:.2f}s, total page {time.time() - start_page:.2f}s")
         elif self._is_image(mime_type):
             print("[DEBUG] Detected image input")
+            t_imgload = time.time()
             image = self._bytes_to_image(file_content)
+            print(f"[DEBUG] Image loaded in {time.time() - t_imgload:.2f} seconds")
+            t_pipeline = time.time()
             all_detections = self._process_image_with_pipeline(image, 1)
+            print(f"[DEBUG] pipeline took {time.time() - t_pipeline:.2f} seconds")
         else:
             print(f"[DEBUG] Unsupported file type: {mime_type}")
             raise ValueError(f"Unsupported file type: {mime_type}. Supported: PDF and image formats.")
-        print(f"[DEBUG] Returning {len(all_detections)} detections")
+        print(f"[DEBUG] Returning {len(all_detections)} detections. Total time: {time.time() - start_total:.2f} seconds")
         return all_detections
 
     def _process_image_with_pipeline(self, image: Image.Image, page_number: int = 1) -> List[Dict[str, Any]]:
         import tempfile
         temp_path = None
+        t0 = time.time()
         try:
+            t_save_start = time.time()
             with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as temp_file:
                 image.save(temp_file.name, format='PNG')
                 temp_path = temp_file.name
-            print(f"[DEBUG] Saved temp image at {temp_path}")
+            t_save_end = time.time()
+            print(f"[DEBUG] Saved temp image at {temp_path} (save took {t_save_end - t_save_start:.3f}s)")
+            t_predict_start = time.time()
             result = self.pipeline.predict(input=temp_path)
-            print(f"[DEBUG] pipeline.predict result: {result}")
+            t_predict_end = time.time()
+            print(f"[DEBUG] pipeline.predict result: {result} (predict took {t_predict_end - t_predict_start:.3f}s)")
+            t_extract_start = time.time()
             result_list = list(result) if result else []
             if result_list:
-                return self._extract_ocr_results(result_list[0], page_number)
-            return []
+                detections = self._extract_ocr_results(result_list[0], page_number)
+            else:
+                detections = []
+            t_extract_end = time.time()
+            print(f"[DEBUG] Extracted OCR results (extract took {t_extract_end - t_extract_start:.3f}s)")
+            print(f"[DEBUG] Total _process_image_with_pipeline time: {time.time() - t0:.3f}s")
+            return detections
         except Exception as e:
             print(f"[DEBUG] Exception in _process_image_with_pipeline: {e}")
             import traceback
