@@ -29,7 +29,7 @@ services:
   worker:
     build: .
     container_name: celery_worker
-    command: celery -A src.tasks.celery_app worker --loglevel=info
+    command: celery -A src.tasks.celery_app worker --loglevel=info --concurrency=2 -P prefork
     volumes:
       - ./src:/home/app/src
     depends_on:

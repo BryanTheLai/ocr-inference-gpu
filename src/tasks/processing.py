@@ -13,7 +13,10 @@ def get_ocr_service():
         print("✅ Celery: OCRService loaded.")
     return _ocr_service
 
-@celery_app.task(bind=True)
+@celery_app.task(
+    bind=True,
+    rate_limit='20/m'
+    )
 def run_ocr_processing(self, file_content: bytes, mime_type: str):
     try:
         svc = get_ocr_service()

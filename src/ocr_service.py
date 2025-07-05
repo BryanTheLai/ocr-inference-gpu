@@ -145,6 +145,8 @@ class OCRService:
             traceback.print_exc()
             raise
         finally:
+            del result
+            del result_list
             if temp_path:
                 try:
                     os.unlink(temp_path)
