@@ -1,14 +1,41 @@
-# This file should be in your project's root directory.
+# docker-compose.yml
 version: '3.8'
 
 services:
-  ocr-inference-gpu:
-    build: .
+  # The Redis Message Broker (The "Ticket Rail")
+  redis:
+    image: redis:7-alpine
+    container_name: redis_broker
     ports:
-      - "8001:8001"
-    # --- THIS IS THE FIX ---
-    # This section explicitly grants the container access to all available GPUs.
-    # It's the docker-compose equivalent of the `--gpus all` flag.
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  # The FastAPI App (The "Maître d'")
+  api:
+    build: .
+    container_name: fastapi_app
+    command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ./src:/home/app/src # Mount local src for hot-reloading
+    ports:
+      - "8000:8000"
+    depends_on:
+      - redis
+    env_file:
+      - .env
+
+  # The Celery Worker (The "Chef")
+  worker:
+    build: .
+    container_name: celery_worker
+    command: celery -A src.tasks.celery_app worker --loglevel=info --concurrency=2 -P prefork
+    volumes:
+      - ./src:/home/app/src
+    depends_on:
+      - redis
+    env_file:
+      - .env
     deploy:
       resources:
         reservations:
@@ -16,4 +43,6 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
-    # --- END OF FIX ---
+
+volumes:
+  redis_data:

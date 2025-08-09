@@ -8,7 +8,7 @@ import mimetypes
 import time
 
 class OCRService:
-    def __init__(self, pipeline_config: str = "./configs/pipelines/PP-StructureV3.yaml"):
+    def __init__(self, pipeline_config: str = "src/configs/pipelines/PP-StructureV3.yaml"):
         self.pipeline = create_pipeline(
             pipeline=pipeline_config,
             device="gpu",
@@ -145,6 +145,8 @@ class OCRService:
             traceback.print_exc()
             raise
         finally:
+            del result
+            del result_list
             if temp_path:
                 try:
                     os.unlink(temp_path)

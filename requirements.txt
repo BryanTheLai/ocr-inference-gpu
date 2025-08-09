@@ -1,5 +1,4 @@
 paddlex[ocr]
-#paddlepaddle-gpu==2.6.2
 uvicorn
 fastapi
 python-multipart
@@ -8,3 +7,6 @@ pillow==11.2.1
 pymupdf
 requests
 protobuf==3.20.3
+celery[redis]
+pydantic
+python-dotenv
