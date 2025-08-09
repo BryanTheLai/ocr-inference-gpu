@@ -1,208 +1,394 @@
-# Asynchronous Document OCR & Parsing Engine
 
-This project provides a high-performance, asynchronous API for extracting structured text and layout information from PDF and image files. It is built with a robust architecture using FastAPI for the web layer, Celery for distributed task queuing, and Redis as a message broker.
+<div align="center">
 
-The core OCR and document structure analysis is powered by Baidu's **PaddleOCR / PP-StructureV3** pipeline, optimized for accuracy and performance on a GPU.
+# OCR Inference GPU
 
-This engine is designed to be the foundational "vision" component for higher-level AI workflows, such as invoice processing, contract analysis, and automated data entry.
+**High-Performance Asynchronous Document Processing Engine**
 
-## Table of Contents
-- [Architecture Overview](#architecture-overview)
-- [Prerequisites](#prerequisites)
-- [Local Setup & Installation](#local-setup--installation)
-- [Running the Service](#running-the-service)
-- [API Contract & Usage](#api-contract--usage)
-  - [1. Submit a Document for Processing](#1-submit-a-document-for-processing)
-  - [2. Check Task Status and Retrieve Results](#2-check-task-status-and-retrieve-results)
-- [Future Development](#future-development)
+![Python](https://img.shields.io/badge/python-3.12+-blue.svg) ![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-green.svg) ![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg)
 
-## Architecture Overview
+*Transform unstructured PDFs and images into structured, queryable data with GPU-accelerated OCR*
 
-The system is designed for scalability and responsiveness by decoupling the fast API from the slow, GPU-intensive OCR tasks.
 
-- **FastAPI (The "Maître d'")**: A non-blocking web server that instantly accepts file uploads and queues them for processing. It provides endpoints to submit jobs and check their status.
-- **Redis (The "Ticket Rail")**: A high-speed message broker that holds the queue of pending OCR tasks.
-- **Celery Worker (The "Chef")**: A powerful background worker that consumes tasks from the Redis queue. It runs on a GPU-enabled machine and performs the actual document parsing using the PP-StructureV3 pipeline.
 
-```graphviz
-digraph Architecture {
-    graph [rankdir="LR", fontname="Helvetica"];
-    node [shape=box, style="rounded,filled", fontname="Helvetica"];
+**Quick Start** • **Documentation** • **Architecture** • **API Reference** • **Contributing**
+
+# </div>
+---
+
+## 🚀 Overview
+
+A production-grade asynchronous OCR processing engine built for enterprise-scale document intelligence. The system combines FastAPI's high-performance web framework with Celery's distributed task processing, powered by PaddleOCR's PP-StructureV3 pipeline for state-of-the-art accuracy.
+
+<!-- Hero Image showcasing OCR results -->
+<p align="center">
+    <img src="images/before.png" alt="Original Document" width="45%" />
+    <img src="images/after.png" alt="OCR Overlay Document" width="50%" />
+</p>
+<p align="center">Figure 1: Example comparison of an unprocessed document (left) and OCR overlay results (right).</p>
+
+
+**Core Capabilities:**
+- **Asynchronous Processing**: Non-blocking API with real-time status tracking
+- **GPU Acceleration**: Optimized for NVIDIA CUDA environments
+- **Multi-format Support**: PDFs and image formats (PNG, JPG, TIFF)
+- **Enterprise Architecture**: Scalable microservices with Redis message brokering
+- **Production Ready**: Containerized deployment with comprehensive error handling
+
+**Technical Stack:**
+- **Backend**: FastAPI with Pydantic validation
+- **Task Queue**: Celery with Redis broker
+- **OCR Engine**: PaddleOCR PP-StructureV3 pipeline
+- **Containerization**: Docker Compose with GPU support
+- **AI Models**: 13 specialized models for layout detection, text recognition, and table extraction
+
+## 🏗️ Architecture
+
+The system implements a microservices architecture optimized for high-throughput document processing:
+
+```mermaid
+graph TB
+    subgraph "Client Layer"
+        A[Client Application]
+        B[Python Requests]
+        C[cURL/HTTP]
+    end
     
-    user [label="Client / User", shape=none, image="https://cdn-icons-png.flaticon.com/512/1946/1946429.png"];
+    subgraph "API Gateway"
+        D[FastAPI Server<br/>Port 8000]
+    end
     
-    subgraph cluster_app {
-        label="Application Services";
-        api [label="FastAPI App", fillcolor="#E3F2FD"];
-        worker [label="Celery GPU Worker", fillcolor="#C8E6C9"];
-    }
+    subgraph "Message Broker"
+        E[Redis<br/>Port 6379]
+    end
     
-    redis [label="Redis\n(Task Queue & Results)", shape=cylinder, fillcolor="#FFCCBC"];
+    subgraph "Processing Layer"
+        F[Celery Worker<br/>GPU-Enabled]
+        G[OCR Service<br/>PP-StructureV3]
+    end
     
-    user -> api [label="1. POST /process (PDF)"];
-    api -> redis [label="2. Enqueue Task"];
-    redis -> worker [label="3. Worker fetches Task"];
-    worker -> redis [label="5. Writes Result"];
-    user -> api [label="4. GET /results/{id}"];
-    api -> redis [label="6. Reads Result"];
-    worker -> gpu [style=dashed];
-    gpu [label="NVIDIA GPU", shape=component, fillcolor="#FFF9C4"];
-}
+    subgraph "AI Models"
+        H[Layout Detection<br/>PP-DocLayout_plus-L]
+        I[Text Detection<br/>PP-OCRv5_server_det]
+        J[Text Recognition<br/>en_PP-OCRv4_mobile_rec]
+        K[Table Recognition<br/>SLANeXt + RT-DETR-L]
+    end
+    
+    A --> D
+    B --> D
+    C --> D
+    D --> E
+    E --> F
+    F --> G
+    G --> H
+    G --> I
+    G --> J
+    G --> K
+    
+    style D fill:#e1f5fe
+    style E fill:#fff3e0
+    style F fill:#f3e5f5
+    style G fill:#e8f5e8
 ```
 
-## Prerequisites
+**Component Responsibilities:**
 
-- **Docker & Docker Compose**: The entire application is containerized.
-- **NVIDIA GPU & Drivers**: The Celery worker is configured to run on an NVIDIA GPU. You must have a compatible GPU and the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) installed.
+| Component | Role | Technology | Scaling |
+|-----------|------|------------|---------|
+| **FastAPI Server** | Request handling, task orchestration | FastAPI + Uvicorn | Horizontal |
+| **Redis Broker** | Message queuing, result storage | Redis 7 | Cluster-ready |
+| **Celery Worker** | GPU-intensive OCR processing | Celery + PaddleOCR | Vertical (GPU) |
+| **OCR Pipeline** | Document analysis and text extraction | PP-StructureV3 | Model-parallel |
 
-## Local Setup & Installation
+## ⚡ Quick Start
 
-1.  **Clone the repository:**
-    ```bash
-    git clone [your-repo-url]
-    cd [your-repo-name]
-    ```
+### Prerequisites
 
-2.  **Create an environment file:**
-    Create a `.env` file in the root directory. This is used to configure the Redis connection.
-    ```env
-    # .env
-    REDIS_URL=redis://redis:6379/0
-    ```
+- **Docker & Docker Compose**: Container orchestration platform
+- **NVIDIA GPU & Drivers**: Compatible GPU with [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
+- **4GB+ GPU Memory**: Required for model inference
+- **16GB+ System RAM**: Recommended
 
-3.  **Build the Docker containers:**
-    This command will build the Docker images for both the `api` and `worker` services based on the `Dockerfile`.
-    ```bash
-    docker-compose build
-    ```
+### Installation
 
-## Running the Service
+1. **Clone and Setup**
+   ```bash
+   git clone https://github.com/your-username/ocr-inference-gpu.git
+   cd ocr-inference-gpu
+   ```
 
-To start all services (FastAPI, Redis, Celery Worker), run:
+2. **Environment Configuration**
+   ```bash
+   # Create environment file
+   echo "REDIS_URL=redis://redis:6379/0" > .env
+   ```
+
+3. **Build and Deploy**
+   ```bash
+   # Build containers
+   docker-compose build
+   
+   # Start services
+   docker-compose up
+   ```
+
+4. **Initial Model Download** ⚠️
+   
+   **IMPORTANT**: On first startup, the system downloads 13 AI models (~2-3GB total). This process takes around 30 seconds and must complete before the API becomes fully functional. Monitor the worker logs:
+   
+   ```bash
+   docker-compose logs -f worker
+   ```
+   
+   Look for: `✅ Celery: OCRService loaded.`
+
+### Verification
 
 ```bash
-docker-compose up
+# Health check
+curl http://localhost:8000/docs
+
+# Test with sample document
+curl -X POST -F "file=@dataset/1page.pdf" \
+     http://localhost:8000/api/v1/ocr/process
 ```
 
-You should see logs from all three containers, indicating that the API is running on `http://localhost:8000` and the worker is connected to Redis, waiting for tasks.
+## 📡 API Reference
 
-To run in detached mode:
-```bash
-docker-compose up -d
+### Document Processing Workflow
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant API as FastAPI
+    participant R as Redis
+    participant W as Worker
+    participant OCR as OCR Engine
+    
+    C->>API: POST /api/v1/ocr/process
+    API->>R: Queue task
+    API->>C: 202 {task_id}
+    
+    loop Polling
+        C->>API: GET /api/v1/ocr/results/{task_id}
+        API->>R: Check status
+        API->>C: Status response
+    end
+    
+    R->>W: Dequeue task
+    W->>OCR: Process document
+    OCR->>W: Return detections
+    W->>R: Store results
+    
+    C->>API: GET /api/v1/ocr/results/{task_id}
+    API->>R: Fetch results
+    API->>C: 200 {detections}
 ```
 
-## API Contract & Usage
+### Endpoints
 
-The API provides two main endpoints for an asynchronous workflow.
+#### Submit Document Processing
 
-### 1. Submit a Document for Processing
+```http
+POST /api/v1/ocr/process
+Content-Type: multipart/form-data
 
-This endpoint accepts a file (PDF or image), queues it for processing, and immediately returns a `task_id`.
-
-- **Endpoint:** `POST /api/v1/ocr/process`
-- **Method:** `POST`
-- **Body:** `multipart/form-data` with a single `file` field.
-
-**Example cURL Request:**
-
-```bash
-curl -X POST -F "file=@/path/to/your/document.pdf" http://localhost:8000/api/v1/ocr/process
+file: <PDF or image file>
 ```
 
-**Successful Response (Status 202 Accepted):**
-
-The API immediately responds with a task ID, confirming the job has been queued.
-
+**Response (202 Accepted)**
 ```json
 {
-  "task_id": "e619b874-dc3d-4b49-bb22-07307e852987",
+  "task_id": "a0cbcc44-7857-45a9-b6d2-f0cf91b81cce",
+  "status": "pending",
   "message": "OCR task queued successfully."
 }
 ```
 
-### 2. Check Task Status and Retrieve Results
+#### Retrieve Processing Results
 
-Use the `task_id` from the previous step to poll this endpoint for the status and final result.
-
-- **Endpoint:** `GET /api/v1/ocr/results/{task_id}`
-- **Method:** `GET`
-
-**Example cURL Request:**
-
-```bash
-curl http://localhost:8000/api/v1/ocr/results/e619b874-dc3d-4b49-bb22-07307e852987
+```http
+GET /api/v1/ocr/results/{task_id}
 ```
 
-**Response While Pending/Running:**
-
-The `status` will be `PENDING` or `STARTED`. The `result` field will be `null`.
-
+**Response Schema**
 ```json
 {
-  "task_id": "e619b874-dc3d-4b49-bb22-07307e852987",
-  "status": "STARTED",
-  "result": null,
-  "pending_tasks": 0 
-}
-```
-
-**Response on Success:**
-
-The `status` will be `SUCCESS` and the `result` field will contain the structured OCR data.
-
-```json
-{
-  "task_id": "e619b874-dc3d-4b49-bb22-07307e852987",
-  "status": "SUCCESS",
+  "task_id": "string",
+  "status": "SUCCESS" | "PENDING" | "STARTED" | "FAILURE",
   "result": {
     "detections": [
       {
-        "text": "UNITED STATES",
-        "box": [
-          [466.0, 117.0],
-          [757.0, 117.0],
-          [757.0, 157.0],
-          [466.0, 157.0]
-        ],
-        "confidence": 0.9991229772567749,
+        "text": "string",
+        "box": [[x1, y1], [x2, y2], [x3, y3], [x4, y4]],
+        "confidence": 0.0-1.0,
         "page_number": 1
-      },
-      // ... more detections
+      }
     ]
   },
   "pending_tasks": 0
 }
 ```
 
-**Response on Failure:**
+### Client Implementation
 
-The `status` will be `FAILURE` and the `result` will contain error information.
+**Python Example**
+```python
+import requests
+import time
 
-```json
-{
-  "task_id": "some-failed-task-id",
-  "status": "FAILURE",
-  "result": {
-    "error": "Details about the exception that occurred."
-  },
-  "pending_tasks": 0
-}
+BASE_URL = "http://localhost:8000"
+
+# Submit document
+with open("document.pdf", "rb") as f:
+    response = requests.post(
+        f"{BASE_URL}/api/v1/ocr/process",
+        files={"file": ("document.pdf", f, "application/pdf")}
+    )
+    task_id = response.json()["task_id"]
+
+# Poll for results
+while True:
+    result = requests.get(f"{BASE_URL}/api/v1/ocr/results/{task_id}")
+    data = result.json()
+    
+    if data["status"] == "SUCCESS":
+        detections = data["result"]["detections"]
+        print(f"Extracted {len(detections)} text elements")
+        break
+    elif data["status"] == "FAILURE":
+        print(f"Processing failed: {data['result']['error']}")
+        break
+    
+    time.sleep(2)
 ```
 
-## Future Development
+**Visualization Example**
+```python
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+from PIL import Image
 
-- **Implement LLM Layer:** Add a new Celery task that takes the structured JSON from the OCR task and uses a Large Language Model (e.g., via `LiteLLM`) to extract specific business entities (e.g., invoice total, vendor name).
-- **Add Database Persistence:** Store the results in a database (e.g., PostgreSQL) instead of just in the Redis backend for long-term storage and querying.
-- **Webhook Callbacks:** Instead of polling, implement a webhook system to notify a client application once a task is complete.
+def visualize_detections(image_path, detections, page_number=1):
+    """Overlay bounding boxes on document image"""
+    img = Image.open(image_path)
+    fig, ax = plt.subplots(figsize=(12, 16))
+    ax.imshow(img)
+    
+    page_detections = [d for d in detections if d["page_number"] == page_number]
+    
+    for detection in page_detections:
+        box = detection["box"]
+        xs, ys = zip(*box)
+        
+        rect = patches.Rectangle(
+            (min(xs), min(ys)), 
+            max(xs) - min(xs), 
+            max(ys) - min(ys),
+            linewidth=2, 
+            edgecolor='red', 
+            facecolor='none'
+        )
+        ax.add_patch(rect)
+        
+        ax.text(
+            min(xs), min(ys) - 5, 
+            detection["text"][:50], 
+            color='red', 
+            fontsize=8, 
+            backgroundcolor='white'
+        )
+    
+    ax.set_title(f"Page {page_number} - {len(page_detections)} detections")
+    plt.axis('off')
+    plt.show()
+```
 
-# logging
-Always log to stdout in JSON format (never to files in containers).
-Use a custom JSON formatter for all logs.
-Add request/correlation IDs to every log (middleware for web apps).
-Never use reserved LogRecord attribute names (like filename, levelname, etc.) in extra.
-Use a single, centralized logging config loaded at startup.
-Never use print for logging.
-Let your platform (Kubernetes, Docker, cloud) aggregate logs.
-Use log levels appropriately (DEBUG, INFO, WARNING, ERROR, CRITICAL).
-Log exceptions with exc_info=True.
-Add context to logs, but use safe field names
+## 🔧 Configuration
+
+### Pipeline Configuration
+
+The OCR pipeline is configured via `src/configs/pipelines/PP-StructureV3.yaml`:
+
+```yaml
+pipeline_name: PP-StructureV3
+batch_size: 4
+use_doc_preprocessor: True
+use_table_recognition: True
+
+SubModules:
+  LayoutDetection:
+    model_name: PP-DocLayout_plus-L
+    threshold:
+      0: 0.3  # Text regions
+      1: 0.5  # Titles
+      2: 0.4  # Lists
+      # ... additional classes
+```
+
+### Model Architecture
+
+| Model | Purpose | Size | Precision |
+|-------|---------|------|-----------|
+| `PP-DocLayout_plus-L` | Layout detection and segmentation | ~200MB | High |
+| `PP-OCRv5_server_det` | Text line detection | ~180MB | High |
+| `en_PP-OCRv4_mobile_rec` | English text recognition | ~25MB | Mobile-optimized |
+| `SLANeXt_wired` | Table structure recognition | ~150MB | Enterprise |
+| `RT-DETR-L_*_table_cell_det` | Table cell detection | ~300MB | High precision |
+
+### Performance Tuning
+
+**Memory Optimization**
+```yaml
+# Reduce batch size for lower memory usage
+batch_size: 2
+
+# Disable unused modules
+use_seal_recognition: False
+use_formula_recognition: False
+use_chart_recognition: False
+```
+
+**Throughput Optimization**
+```yaml
+# Increase batch size for higher throughput
+batch_size: 8
+
+# Worker concurrency
+command: celery -A src.tasks.celery_app worker --concurrency=4
+```
+
+## 🚀 Deployment
+
+### Production Configuration
+
+### Monitoring
+
+**Health Checks**
+```bash
+# API health
+curl http://localhost:8000/health
+
+# Worker status
+celery -A src.tasks.celery_app inspect active
+
+# Redis metrics
+redis-cli info memory
+```
+
+**Performance Metrics**
+ **Performance Metrics (RTX 3050 4GB Laptop)**
+ - **Throughput**: ~20 pages/minute (~3 seconds per page)
+ - **Latency**: ~3 seconds per page for 300 DPI input
+ - **Memory**: 4GB GPU, ~4-6GB system RAM
+
+
+### Architecture Decisions
+
+**Why FastAPI?** High-performance async framework with automatic OpenAPI documentation
+
+**Why Celery?** Proven distributed task queue with robust error handling and retry mechanisms
+
+**Why PaddleOCR?** State-of-the-art accuracy with production-ready performance and Chinese text support
+
+**Why Redis?** In-memory performance for task queuing with persistence options
