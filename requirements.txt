@@ -10,3 +10,5 @@ protobuf==3.20.3
 celery[redis]==5.5.3
 pydantic==2.11.7
 python-dotenv==1.1.1
+litellm==1.76.1
+aiofiles==24.1.0

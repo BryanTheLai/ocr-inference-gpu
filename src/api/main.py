@@ -1,17 +1,29 @@
 # src/api/main.py
 from typing import List
 from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
 from src.models.schema import ProcessRequest, TaskStatus, TaskResult
 from src.tasks.processing import run_ocr_processing
 from src.tasks.celery_app import celery_app
 from celery.result import AsyncResult
 import redis
 from src.configs.pipelines.settings import settings
+from src.api.document_processor import router as document_router
 
 app = FastAPI(
     title="Async AI Processing API",
     description="A demonstration of using FastAPI with Celery and Redis."
 )
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(document_router)
 
 def log(msg):
     print(f"\n{'='*40}\n{msg}\n{'='*40}")
