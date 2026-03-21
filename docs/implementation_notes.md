@@ -1,79 +1,48 @@
 # OCR Inference GPU Notes
 
-## Architecture
+## Request Path
 
-The request path is simple:
+`src/api/main.py` accepts the upload, reads the file once, and pushes the bytes into Celery.
 
-```python
-@app.post("/api/v1/ocr/process", response_model=TaskStatus, status_code=202)
-async def create_ocr_task(file: UploadFile = File(...)):
-    contents = await file.read()
-    task = run_ocr_processing.delay(contents, file.content_type)
-    return TaskStatus(task_id=task.id, message="OCR task queued successfully.")
-```
+The submission endpoint also accepts an optional `extraction_schema` form field. When present, the worker runs hybrid extraction after OCR.
 
-The worker path stays lazy so the OCR model is loaded once per worker process:
+## Worker Path
 
-```python
-_ocr_service = None
+`src/tasks/processing.py` caches the OCR and extraction services with `lru_cache(maxsize=1)`. That keeps model loading lazy and local to each worker process.
 
-def get_ocr_service():
-    global _ocr_service
-    if _ocr_service is None:
-        _ocr_service = OCRService()
-    return _ocr_service
-```
+The worker returns raw detections for every file. If schema extraction is requested, it adds an `extracted_data` payload.
 
-The OCR service normalizes PDF and image inputs into the same extraction path:
+## OCR Path
 
-```python
-if self._is_pdf(file_content):
-    images = self._pdf_to_images(file_content)
-    for page_num, image in enumerate(images, 1):
-        detections = self._process_image_with_pipeline(image, page_num)
-```
+`src/ocr_service.py` normalizes PDFs and images into one pipeline.
 
-## Root Fix
+- PDFs are rasterized page by page through `src/core/pdf_processor.py`.
+- Images go directly into PaddleOCR.
+- Each detection carries `text`, `box`, `confidence`, and `page_number`.
 
-The failure path in image processing was masking the original exception. The cleanup block now only removes the temp file:
+## Extraction Path
 
-```python
-finally:
-    if temp_path:
-        try:
-            os.unlink(temp_path)
-        except OSError:
-            pass
-```
+`src/extraction_service.py` sends serialized OCR text to `src/core/llm_client.py`.
 
-## Notebook Fix
+The LLM returns JSON that is then grounded back to OCR boxes with fuzzy matching. That is why extracted values can carry bounding boxes and page numbers.
 
-The notebook now imports `io` before using `io.BytesIO` in the page-rendering cell.
+## Shared Adapters
+
+- `src/core/cache.py` owns the Redis client.
+- `src/core/pdf_processor.py` owns PDF rasterization.
+- `src/core/llm_client.py` owns the LLM request.
+
+## Current Behavior
+
+- The API does not persist uploads.
+- Results are polled through Celery task ids.
+- Invalid JSON schemas are reported in the task result, not as an API crash.
 
 ## Verification
 
-Tests added in `tests/test_api_and_ocr.py` cover:
+The test suite covers:
 
-```python
-assert response.status_code == 202
-assert response.json() == {
-    "task_id": "task-123",
-    "status": "pending",
-    "message": "OCR task queued successfully.",
-}
-```
-
-```python
-assert response.model_dump() == expected_body
-```
-
-```python
-with pytest.raises(RuntimeError, match="pipeline failed"):
-    service._process_image_with_pipeline(image, page_number=1)
-```
-
-Run result:
-
-```text
-5 passed
-```
+- task submission
+- task polling
+- OCR failure propagation
+- current response shapes

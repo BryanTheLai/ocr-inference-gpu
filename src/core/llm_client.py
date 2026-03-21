@@ -1,3 +1,5 @@
+"""LiteLLM adapter used for schema-based extraction."""
+
 import json
 import logging
 from typing import Any, Dict
@@ -7,38 +9,24 @@ logger = logging.getLogger(__name__)
 
 
 class LLMClient:
-    """
-    Client for interacting with Large Language Models (LLMs) to perform structured data extraction.
-
-    Abstracts away the underlying provider (e.g., via litellm) and enforces strict JSON schema
-    compliance on the output.
-    """
-
-    def __init__(self, model_name: str = "gemini/gemini-1.5-flash"):
-        """
-        Initializes the client.
-
-        Args:
-            model_name: The target model identifier to use (litellm format).
-                        Default: 'gemini/gemini-1.5-flash'.
-        """
+    def __init__(self, model_name: str = "gemini/gemini-3.1-flash-lite-preview"):
+        """Store the model name used for structured extraction requests."""
         self.model_name = model_name
 
     def extract_structured_data(
         self, text: str, json_schema: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """
-        Passes unstructured text to the LLM to extract data matching a given JSON schema.
+        """Call the LLM and return a JSON object that matches the schema.
 
         Args:
-            text: The text corpus to extract data from.
-            json_schema: A python dictionary representing the JSON schema to strictly enforce.
+            text: OCR text flattened into one prompt string.
+            json_schema: JSON Schema used to constrain the response.
 
         Returns:
-            A python dictionary containing the extracted fields mapped to the schema.
+            Parsed JSON content from the model response.
 
         Raises:
-            RuntimeError: If the LLM interaction fails or the format cannot be enforced.
+            RuntimeError: If the model call fails or returns invalid JSON.
         """
         system_prompt = (
             "You are a structured data extraction assistant. "

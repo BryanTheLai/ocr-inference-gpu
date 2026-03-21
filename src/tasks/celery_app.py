@@ -1,3 +1,5 @@
+"""Celery application configured for OCR task execution."""
+
 from celery import Celery
 from src.configs.pipelines.settings import settings
 

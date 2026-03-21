@@ -1,11 +1,15 @@
+"""FastAPI entry point for OCR submission and task polling."""
+
 import logging
-from typing import List, Optional
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
-from src.models.schema import ProcessRequest, TaskStatus, TaskResult
-from src.tasks.processing import run_ocr_processing
-from src.tasks.celery_app import celery_app
+from typing import Optional
+
 from celery.result import AsyncResult
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+
 from src.core.cache import redis_client
+from src.models.schema import TaskResult, TaskStatus
+from src.tasks.celery_app import celery_app
+from src.tasks.processing import run_ocr_processing
 
 logger = logging.getLogger(__name__)
 
@@ -19,18 +23,14 @@ app = FastAPI(
 async def create_ocr_task(
     file: UploadFile = File(...), extraction_schema: Optional[str] = Form(None)
 ):
-    """
-    Submits a document for background OCR and optional LLM structure extraction.
-
-    Validates the input sizes before deferring byte payloads to Redis and firing a Celery task.
-    Returns immediately to ensure high API throughput.
+    """Queue one OCR job and return the Celery task id.
 
     Args:
-        file: Multipart file upload (PDF or Image).
-        extraction_schema: Optional stringified JSON Schema.
+        file: Uploaded PDF or image file.
+        extraction_schema: Optional JSON schema string for hybrid extraction.
 
     Returns:
-        TaskStatus model containing the asynchronous `task_id`.
+        TaskStatus with the queued task id and confirmation message.
     """
     try:
         contents = await file.read()
@@ -44,17 +44,13 @@ async def create_ocr_task(
 
 @app.get("/api/v1/ocr/results/{task_id}", status_code=200, response_model=TaskResult)
 def get_task_result(task_id: str) -> TaskResult:
-    """
-    Polls the status of an asynchronous processing task by ID.
-
-    Inquires through the Redis backend. Returns the current `status` alongside queue counts
-    and, if finalized, the final extracted `result`.
+    """Return the current Celery state and any stored result for one task.
 
     Args:
-        task_id: UUID of the target Celery task.
+        task_id: Celery task id returned by the submission endpoint.
 
     Returns:
-        TaskResult model indicating completion state and output payload.
+        TaskResult with status, result payload, and queue depth.
     """
     task = AsyncResult(task_id, app=celery_app)
     queue_name = celery_app.conf.get("task_default_queue", "celery")

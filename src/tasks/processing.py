@@ -1,4 +1,5 @@
-# src/tasks/processing.py
+"""Celery task orchestration for OCR and optional schema extraction."""
+
 import logging
 import json
 from functools import lru_cache
@@ -12,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 @lru_cache(maxsize=1)
 def get_ocr_service():
+    """Return the cached OCR service instance for this worker process."""
     logger.info("Celery: Loading OCRService...")
     svc = OCRService()
     logger.info("Celery: OCRService loaded.")
@@ -20,6 +22,7 @@ def get_ocr_service():
 
 @lru_cache(maxsize=1)
 def get_extraction_service():
+    """Return the cached extraction service instance for this worker process."""
     logger.info("Celery: Loading ExtractionService...")
     svc = ExtractionService()
     logger.info("Celery: ExtractionService loaded.")
@@ -30,24 +33,15 @@ def get_extraction_service():
 def run_ocr_processing(
     self, file_content: bytes, mime_type: str, extraction_schema: Optional[str] = None
 ):
-    """
-    Celery background task bridging the API to the compute-heavy AI models.
-
-    Accepts raw bytes and delegates to `OCRService` for parsing layout. If a JSON
-    `extraction_schema` is supplied, it further delegates to `ExtractionService` for LLM mapping.
+    """Run OCR, then optionally run schema-based extraction.
 
     Args:
-        self: Bound task instance injected by Celery.
-        file_content: Raw bytes of the target file.
-        mime_type: File's internet media type (e.g. application/pdf).
-        extraction_schema: Optional stringified JSON schema to enforce on LLM outputs.
+        file_content: Uploaded file bytes.
+        mime_type: MIME type reported by the upload.
+        extraction_schema: Optional JSON schema string.
 
     Returns:
-        A dictionary containing raw 'detections' and optionally 'extracted_data'.
-
-    Raises:
-        RuntimeError: If services fail to initialize or the OCR pipeline crashes.
-        ValueError: If file parameters or formats are invalid.
+        A dictionary with detections and, when requested, extracted_data.
     """
     try:
         ocr_svc = get_ocr_service()

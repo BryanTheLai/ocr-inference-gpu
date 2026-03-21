@@ -1,4 +1,5 @@
-# src/models/schema.py
+"""Pydantic response models for OCR task submission and polling."""
+
 from pydantic import BaseModel
 from typing import Literal, Optional, Dict, Any
 
@@ -24,5 +25,4 @@ class TaskResult(BaseModel):
     task_id: str
     status: str
     result: Optional[Dict[str, Any]] = None
-    # Number of tasks pending in the queue
     pending_tasks: Optional[int] = None

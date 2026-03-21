@@ -16,25 +16,22 @@ logger = logging.getLogger(__name__)
 
 
 class ExtractionService:
-    """
-    Combines spatial OCR data with an LLM to produce structurally sound, visually grounded representations.
-
-    Acts as a bridge between absolute coordinates extracted via PaddleOCR and relative semantic
-    meaning extracted via natural language processing.
-    """
-
     def __init__(self, llm_client: Optional[LLMClient] = None):
-        """
-        Initializes the hybrid extraction service.
-
-        Args:
-            llm_client: Injected client instance to override the default LLM implementation.
-        """
+        """Store the LLM client used for schema extraction."""
         self.llm_client = llm_client or LLMClient()
 
     def process_hybrid_extraction(
         self, ocr_results: List[Detection], extraction_schema: Dict[str, Any]
     ) -> Dict[str, Any]:
+        """Extract structured data and ground the values back to OCR boxes.
+
+        Args:
+            ocr_results: Normalized OCR detections.
+            extraction_schema: JSON Schema that constrains the LLM response.
+
+        Returns:
+            A dictionary containing grounded parsed_data and a raw OCR summary.
+        """
         serialized_text, text_index_map = self._serialize_ocr(ocr_results)
         llm_parsed_data = self.llm_client.extract_structured_data(
             serialized_text, extraction_schema

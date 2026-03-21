@@ -1,3 +1,5 @@
+"""PaddleOCR wrapper that normalizes PDFs and images into detections."""
+
 import io
 from typing import Any, Dict, List, Optional
 from paddlex import create_pipeline
@@ -12,10 +14,6 @@ from src.core.pdf_processor import PDFProcessor
 
 
 class Detection(TypedDict):
-    """
-    Representation of a single recognized piece of text in space.
-    """
-
     text: str
     box: List[List[float]]
     confidence: float
@@ -23,35 +21,38 @@ class Detection(TypedDict):
 
 
 class OCRService:
-    """
-    Core service wrapping the PaddleOCR pipeline for GPU-accelerated text detection.
-
-    Handles loading the pre-configured model, and normalizing PDF or direct image inputs
-    into standard `Detection` dictionaries containing text, coordinates and confidences.
-    """
-
     def __init__(
         self, pipeline_config: str = "src/configs/pipelines/PP-StructureV3.yaml"
     ):
-        """
-        Initializes the OCR service by loading the specified paddle pipeline onto the GPU.
+        """Load the PaddleX OCR pipeline used for all document processing.
 
         Args:
-            pipeline_config: Path to the paddle-compliant YAML configuration file.
+            pipeline_config: Path to the PaddleOCR pipeline YAML file.
         """
         self.pipeline = create_pipeline(
             pipeline=pipeline_config, device="gpu", show_log=True
         )
 
     def _is_image(self, mime_type: Optional[str]) -> bool:
+        """Return True when the MIME type is an image type."""
         return bool(mime_type and mime_type.startswith("image/"))
 
     def _bytes_to_image(self, image_bytes: bytes) -> Image.Image:
+        """Convert raw image bytes into a Pillow image."""
         return Image.open(io.BytesIO(image_bytes))
 
     def _extract_ocr_results(
         self, paddle_result: Any, page_number: int = 1
     ) -> List[Detection]:
+        """Normalize PaddleOCR output into Detection records.
+
+        Args:
+            paddle_result: Raw object returned by PaddleOCR.
+            page_number: 1-based page index for the source image.
+
+        Returns:
+            A list of normalized detection dictionaries.
+        """
         detections: List[Detection] = []
         ocr_data = self._get_ocr_data(paddle_result)
         if not ocr_data:
@@ -72,6 +73,7 @@ class OCRService:
         return detections
 
     def _get_ocr_data(self, paddle_result: Any) -> Optional[Dict]:
+        """Extract the OCR payload from a PaddleOCR result wrapper."""
         ocr_keys = ["overall_ocr_res", "rec_texts", "ocr_res"]
         for key in ocr_keys:
             if isinstance(paddle_result, dict) and key in paddle_result:
@@ -81,11 +83,13 @@ class OCRService:
         return None
 
     def _safe_get(self, data: Any, key: str, default: Any) -> Any:
+        """Read a key or attribute from an OCR payload without failing."""
         if isinstance(data, dict):
             return data.get(key, default)
         return getattr(data, key, default)
 
     def _normalize_box(self, box: Any) -> List[List[float]]:
+        """Convert a box representation into four corner points."""
         if len(box) == 4:
             x1, y1, x2, y2 = box
             return [
@@ -102,15 +106,14 @@ class OCRService:
     def process_file_content(
         self, file_content: bytes, mime_type: Optional[str] = None
     ) -> List[Detection]:
-        """
-        Process arbitrary file bytes (PDF or Image) to extract OCR bounding boxes.
+        """Process uploaded bytes and return OCR detections.
 
         Args:
-            file_content: Raw bytes from the uploaded file.
-            mime_type: Optional hint indicating expected format (image/png, application/pdf).
+            file_content: File bytes from an upload or local file.
+            mime_type: MIME type of the file when known.
 
         Returns:
-            A list of `Detection` structures from across all processed pages.
+            Normalized OCR detections across all pages.
 
         Raises:
             ValueError: If the file type is unsupported.
@@ -155,13 +158,14 @@ class OCRService:
     def _process_image_with_pipeline(
         self, image: Image.Image, page_number: int = 1
     ) -> List[Detection]:
+        """Run one image through PaddleOCR and normalize the result."""
         import numpy as np
 
         t0 = time.time()
         try:
             t_convert_start = time.time()
             img_rgb = np.array(image.convert("RGB"))
-            img_bgr = img_rgb[..., ::-1]  # RGB to BGR
+            img_bgr = img_rgb[..., ::-1]
             t_convert_end = time.time()
             print(
                 f"[DEBUG] Image to NumPy converted (took {t_convert_end - t_convert_start:.3f}s)"
@@ -196,6 +200,14 @@ class OCRService:
             raise
 
     def process_local_file(self, file_path: str) -> List[Detection]:
+        """Load a local file and process it through the OCR pipeline.
+
+        Args:
+            file_path: Path to a local PDF or image.
+
+        Returns:
+            Normalized OCR detections.
+        """
         import mimetypes
         import os
 

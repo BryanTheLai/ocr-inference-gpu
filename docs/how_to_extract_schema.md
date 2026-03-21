@@ -1,10 +1,10 @@
 # How to Extract Structured Data
 
-This guide covers how to provide a custom JSON schema to extract specific fields when submitting a document for processing.
+Use this guide when you need the worker to return schema-shaped fields in addition to raw OCR detections.
 
-## 1. Define the Schema
+## 1. Define the schema
 
-Construct a standard JSON Schema detailing the required fields.
+Send a normal JSON Schema object. Keep it small. Only ask for fields you need.
 
 ```json
 {
@@ -17,9 +17,9 @@ Construct a standard JSON Schema detailing the required fields.
 }
 ```
 
-## 2. Submit the Request
+## 2. Submit the file and schema
 
-Pass the schema as a `Form` parameter named `extraction_schema` alongside the file. 
+Pass the schema as a form field named `extraction_schema`.
 
 ```python
 import json
@@ -28,31 +28,38 @@ import requests
 url = "http://127.0.0.1:8000/api/v1/ocr/process"
 schema = {
     "type": "object",
-    "properties": {"invoice_number": {"type": "string"}}
+    "properties": {
+        "invoice_number": {"type": "string"}
+    }
 }
 
-files = {
-    "file": ("invoice.pdf", open("invoice.pdf", "rb"), "application/pdf")
-}
-data = {
-    "extraction_schema": json.dumps(schema)
-}
+with open("invoice.pdf", "rb") as file_handle:
+    response = requests.post(
+        url,
+        files={"file": ("invoice.pdf", file_handle, "application/pdf")},
+        data={"extraction_schema": json.dumps(schema)},
+    )
 
-response = requests.post(url, files=files, data=data)
 print(response.json())
 ```
 
-## 3. Retrieve Results
+## 3. Poll the task
 
-Poll the returned `task_id` at `GET /api/v1/ocr/results/{task_id}`.
+Use the returned `task_id` with `GET /api/v1/ocr/results/{task_id}`.
 
-The completed result will include `extracted_data`, mapping your schema properties to their values, page numbers, and bounding boxes.
+The worker returns:
+
+- `detections`: OCR output from PaddleOCR.
+- `extracted_data`: structured output when schema extraction succeeds.
+
+Example shape:
 
 ```json
 {
   "task_id": "task_123",
   "status": "SUCCESS",
   "result": {
+    "detections": [],
     "extracted_data": {
       "parsed_data": {
         "invoice_number": {
@@ -66,3 +73,5 @@ The completed result will include `extracted_data`, mapping your schema properti
   }
 }
 ```
+
+If the schema is invalid JSON, the worker returns an `extracted_data.error` message instead of failing the whole OCR result.
