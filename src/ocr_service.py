@@ -115,20 +115,20 @@ class OCRService:
         return all_detections
 
     def _process_image_with_pipeline(self, image: Image.Image, page_number: int = 1) -> List[Dict[str, Any]]:
-        import tempfile
-        temp_path = None
+        import numpy as np
         t0 = time.time()
         try:
-            t_save_start = time.time()
-            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as temp_file:
-                image.save(temp_file.name, format='PNG')
-                temp_path = temp_file.name
-            t_save_end = time.time()
-            print(f"[DEBUG] Saved temp image at {temp_path} (save took {t_save_end - t_save_start:.3f}s)")
+            t_convert_start = time.time()
+            img_rgb = np.array(image.convert("RGB"))
+            img_bgr = img_rgb[..., ::-1]  # RGB to BGR
+            t_convert_end = time.time()
+            print(f"[DEBUG] Image to NumPy converted (took {t_convert_end - t_convert_start:.3f}s)")
+            
             t_predict_start = time.time()
-            result = self.pipeline.predict(input=temp_path)
+            result = self.pipeline.predict(input=img_bgr)
             t_predict_end = time.time()
-            print(f"[DEBUG] pipeline.predict result: {result} (predict took {t_predict_end - t_predict_start:.3f}s)")
+            print(f"[DEBUG] pipeline.predict result (predict took {t_predict_end - t_predict_start:.3f}s)")
+            
             t_extract_start = time.time()
             result_list = list(result) if result else []
             if result_list:
@@ -144,28 +144,13 @@ class OCRService:
             import traceback
             traceback.print_exc()
             raise
-        finally:
-            del result
-            del result_list
-            if temp_path:
-                try:
-                    os.unlink(temp_path)
-                except OSError:
-                    pass
 
     def process_local_file(self, file_path: str) -> List[Dict[str, Any]]:
+        import mimetypes
+        import os
         if not os.path.exists(file_path):
             raise ValueError(f"File not found: {file_path}")
         mime_type = mimetypes.guess_type(file_path)[0]
         with open(file_path, 'rb') as f:
-            file_header = f.read(4)
-        if self._is_pdf(file_header):
-            with open(file_path, 'rb') as f:
-                file_content = f.read()
-            return self.process_file_content(file_content, mime_type)
-        else:
-            result = self.pipeline.predict(input=file_path)
-            result_list = list(result) if result else []
-            if result_list:
-                return self._extract_ocr_results(result_list[0], 1)
-            return []
+            file_content = f.read()
+        return self.process_file_content(file_content, mime_type)
