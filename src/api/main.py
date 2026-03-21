@@ -1,4 +1,3 @@
-# src/api/main.py
 import logging
 from typing import List, Optional
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
@@ -6,22 +5,33 @@ from src.models.schema import ProcessRequest, TaskStatus, TaskResult
 from src.tasks.processing import run_ocr_processing
 from src.tasks.celery_app import celery_app
 from celery.result import AsyncResult
-import redis
-from src.configs.pipelines.settings import settings
+from src.core.cache import redis_client
 
 logger = logging.getLogger(__name__)
-redis_client = redis.Redis.from_url(settings.REDIS_URL)
 
 app = FastAPI(
     title="Async AI Processing API",
-    description="A demonstration of using FastAPI with Celery and Redis."
+    description="A demonstration of using FastAPI with Celery and Redis.",
 )
+
 
 @app.post("/api/v1/ocr/process", response_model=TaskStatus, status_code=202)
 async def create_ocr_task(
-    file: UploadFile = File(...),
-    extraction_schema: Optional[str] = Form(None)
+    file: UploadFile = File(...), extraction_schema: Optional[str] = Form(None)
 ):
+    """
+    Submits a document for background OCR and optional LLM structure extraction.
+
+    Validates the input sizes before deferring byte payloads to Redis and firing a Celery task.
+    Returns immediately to ensure high API throughput.
+
+    Args:
+        file: Multipart file upload (PDF or Image).
+        extraction_schema: Optional stringified JSON Schema.
+
+    Returns:
+        TaskStatus model containing the asynchronous `task_id`.
+    """
     try:
         contents = await file.read()
         task = run_ocr_processing.delay(contents, file.content_type, extraction_schema)
@@ -30,17 +40,42 @@ async def create_ocr_task(
     except Exception as e:
         logger.error(f"[OCR ERROR] Could not queue OCR task: {e}")
         raise HTTPException(status_code=500, detail="Failed to queue OCR task.")
-    
+
+
 @app.get("/api/v1/ocr/results/{task_id}", status_code=200, response_model=TaskResult)
 def get_task_result(task_id: str) -> TaskResult:
+    """
+    Polls the status of an asynchronous processing task by ID.
+
+    Inquires through the Redis backend. Returns the current `status` alongside queue counts
+    and, if finalized, the final extracted `result`.
+
+    Args:
+        task_id: UUID of the target Celery task.
+
+    Returns:
+        TaskResult model indicating completion state and output payload.
+    """
     task = AsyncResult(task_id, app=celery_app)
-    queue_name = celery_app.conf.get('task_default_queue', 'celery')
+    queue_name = celery_app.conf.get("task_default_queue", "celery")
     pending_count = redis_client.llen(queue_name)
     if not task.ready():
         logger.info("[STATUS] Task is still pending or running.")
-        return TaskResult(task_id=task_id, status=task.status, pending_tasks=pending_count)
+        return TaskResult(
+            task_id=task_id, status=task.status, pending_tasks=pending_count
+        )
     if task.successful():
         logger.info("[SUCCESS] Task completed successfully.")
-        return TaskResult(task_id=task_id, status=task.status, result=task.result, pending_tasks=pending_count)
+        return TaskResult(
+            task_id=task_id,
+            status=task.status,
+            result=task.result,
+            pending_tasks=pending_count,
+        )
     logger.error(f"[FAILURE] Task failed. Error: {task.info}")
-    return TaskResult(task_id=task_id, status=task.status, result={"error": str(task.info)}, pending_tasks=pending_count)
+    return TaskResult(
+        task_id=task_id,
+        status=task.status,
+        result={"error": str(task.info)},
+        pending_tasks=pending_count,
+    )
