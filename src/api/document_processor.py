@@ -19,7 +19,7 @@ load_dotenv()
 
 router = APIRouter(prefix="/api/v1/document", tags=["document"])
 
-litellm.api_key = os.getenv("GEMINI_API_KEY")
+litellm.api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
 
 class ExtractionSchema(BaseModel):
     schema: Dict[str, Any] = Field(..., description="JSON schema for extraction")

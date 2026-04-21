@@ -13,6 +13,14 @@ def get_ocr_service():
         print("✅ Celery: OCRService loaded.")
     return _ocr_service
 
+@celery_app.task(rate_limit='2/m')
+def warm_ocr_service():
+    get_ocr_service()
+    return {
+        "status": "READY",
+        "message": "OCR service warmed and Paddle models cached."
+    }
+
 @celery_app.task(
     bind=True,
     rate_limit='20/m'

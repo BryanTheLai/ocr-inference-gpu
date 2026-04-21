@@ -3,7 +3,7 @@ from typing import List
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from src.models.schema import ProcessRequest, TaskStatus, TaskResult
-from src.tasks.processing import run_ocr_processing
+from src.tasks.processing import run_ocr_processing, warm_ocr_service
 from src.tasks.celery_app import celery_app
 from celery.result import AsyncResult
 import redis
@@ -39,6 +39,16 @@ async def create_ocr_task(file: UploadFile = File(...)):
     except Exception as e:
         log(f"[OCR ERROR] Could not queue OCR task: {e}")
         raise HTTPException(status_code=500, detail="Failed to queue OCR task.")
+
+@app.post("/api/v1/ocr/warmup", response_model=TaskStatus, status_code=202)
+async def warmup_ocr_service():
+    try:
+        task = warm_ocr_service.delay()
+        log(f"[OCR WARMUP QUEUED] Task ID: {task.id}")
+        return TaskStatus(task_id=task.id, message="OCR warmup queued successfully.")
+    except Exception as e:
+        log(f"[OCR WARMUP ERROR] Could not queue warmup task: {e}")
+        raise HTTPException(status_code=500, detail="Failed to queue OCR warmup task.")
     
 @app.get("/api/v1/ocr/results/{task_id}", status_code=200, response_model=TaskResult)
 def get_task_result(task_id: str) -> TaskResult:
@@ -49,9 +59,9 @@ def get_task_result(task_id: str) -> TaskResult:
     pending_count = redis_client.llen(queue_name)
     if not task.ready():
         log("[STATUS] Task is still pending or running.")
-        return TaskResult(task_id=task_id, status=task.status, pending_tasks=pending_count)
+        return TaskResult(task_id=task_id, status=task.status, result={}, pending_tasks=pending_count)
     if task.successful():
         log("[SUCCESS] Task completed successfully.")
-        return TaskResult(task_id=task_id, status=task.status, result=task.result, pending_tasks=pending_count)
+        return TaskResult(task_id=task_id, status=task.status, result=task.result or {}, pending_tasks=pending_count)
     log(f"[FAILURE] Task failed. Error: {task.info}")
     return TaskResult(task_id=task_id, status=task.status, result={"error": str(task.info)}, pending_tasks=pending_count)
