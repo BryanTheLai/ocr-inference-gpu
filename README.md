@@ -20,12 +20,15 @@
 
 A production-grade asynchronous OCR processing engine built for enterprise-scale document intelligence. The system combines FastAPI's high-performance web framework with Celery's distributed task processing, powered by PaddleOCR's PP-StructureV3 pipeline for state-of-the-art accuracy.
 
-<!-- Hero Image showcasing OCR results -->
+### Before vs After
+
+This is exactly what the service does: takes a raw document page and returns OCR detections (text + bounding boxes + confidence), so you can visualize and extract structured information.
+
 <p align="center">
-    <img src="images/before.png" alt="Original Document" width="45%" />
-    <img src="images/after.png" alt="OCR Overlay Document" width="50%" />
+    <img src="images/before-original.png" alt="Original SEC 10-K page" width="46%" />
+    <img src="images/after-ocr-overlay.png" alt="OCR overlay with detected text boxes" width="46%" />
 </p>
-<p align="center">Figure 1: Example comparison of an unprocessed document (left) and OCR overlay results (right).</p>
+<p align="center"><em>Left: original page. Right: OCR detections overlaid as text regions.</em></p>
 
 
 **Core Capabilities:**
@@ -100,60 +103,63 @@ graph TB
 | **Celery Worker** | GPU-intensive OCR processing | Celery + PaddleOCR | Vertical (GPU) |
 | **OCR Pipeline** | Document analysis and text extraction | PP-StructureV3 | Model-parallel |
 
-## ⚡ Quick Start
+## ⚡ Quick Start (2 minutes)
 
 ### Prerequisites
 
-- **Docker & Docker Compose**: Container orchestration platform
-- **NVIDIA GPU & Drivers**: Compatible GPU with [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
-- **4GB+ GPU Memory**: Required for model inference
-- **16GB+ System RAM**: Recommended
+- Docker + Docker Compose
+- NVIDIA GPU with CUDA drivers and [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
+- Recommended: 4GB+ GPU VRAM, 16GB+ system RAM
 
-### Installation
-
-1. **Clone and Setup**
-   ```bash
-   git clone https://github.com/your-username/ocr-inference-gpu.git
-   cd ocr-inference-gpu
-   ```
-
-2. **Environment Configuration**
-   ```bash
-   # Create environment file
-   echo "REDIS_URL=redis://redis:6379/0" > .env
-   ```
-
-3. **Build and Deploy**
-   ```bash
-   # Build containers
-   docker-compose build
-   
-   # Start services
-   docker-compose up
-   ```
-
-4. **Initial Model Download** ⚠️
-   
-   **IMPORTANT**: On first startup, the system downloads 13 AI models (~2-3GB total). This process takes around 30 seconds and must complete before the API becomes fully functional. Monitor the worker logs:
-   
-   ```bash
-   docker-compose logs -f worker
-   ```
-   
-   Look for: `✅ Celery: OCRService loaded.`
-
-### Verification
+### 1) Clone and configure
 
 ```bash
-# Health check
-curl http://localhost:8000/docs
-
-# Test with sample document
-curl -X POST -F "file=@dataset/1page.pdf" \
-     http://localhost:8000/api/v1/ocr/process
+git clone https://github.com/your-username/ocr-inference-gpu.git
+cd ocr-inference-gpu
+cp .env.example .env
 ```
 
-## 📡 API Reference
+`REDIS_URL` is already configured for Docker in `.env.example`:
+
+```env
+REDIS_URL="redis://redis:6379/0"
+```
+
+### 2) Start the stack
+
+```bash
+docker-compose up --build
+```
+
+Services:
+- API: `http://localhost:8000`
+- OpenAPI docs: `http://localhost:8000/docs`
+- Redis broker: `localhost:6379`
+
+### 3) Wait for first model warmup
+
+On first run, Paddle models are downloaded. Watch worker logs until OCR service is loaded:
+
+```bash
+docker-compose logs -f worker
+```
+
+### 4) Run your first OCR call
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/ocr/process" \
+  -F "file=@dataset/1page.pdf"
+```
+
+Copy the returned `task_id`, then:
+
+```bash
+curl "http://localhost:8000/api/v1/ocr/results/<task_id>"
+```
+
+Repeat the `results` call until `status` becomes `SUCCESS`.
+
+## 📡 Simple API Usage
 
 ### Document Processing Workflow
 
@@ -185,18 +191,18 @@ sequenceDiagram
     API->>C: 200 {detections}
 ```
 
-### Endpoints
+### Core endpoints
 
-#### Submit Document Processing
+#### 1) Queue OCR job
 
 ```http
 POST /api/v1/ocr/process
 Content-Type: multipart/form-data
-
-file: <PDF or image file>
+file=<PDF or image>
 ```
 
-**Response (202 Accepted)**
+Returns `202 Accepted`:
+
 ```json
 {
   "task_id": "a0cbcc44-7857-45a9-b6d2-f0cf91b81cce",
@@ -205,23 +211,24 @@ file: <PDF or image file>
 }
 ```
 
-#### Retrieve Processing Results
+#### 2) Fetch OCR job result
 
 ```http
 GET /api/v1/ocr/results/{task_id}
 ```
 
-**Response Schema**
+Returns task state plus OCR output when done:
+
 ```json
 {
   "task_id": "string",
-  "status": "SUCCESS" | "PENDING" | "STARTED" | "FAILURE",
+  "status": "SUCCESS",
   "result": {
     "detections": [
       {
-        "text": "string",
+        "text": "Tesla, Inc.",
         "box": [[x1, y1], [x2, y2], [x3, y3], [x4, y4]],
-        "confidence": 0.0-1.0,
+        "confidence": 0.99,
         "page_number": 1
       }
     ]
@@ -232,77 +239,104 @@ GET /api/v1/ocr/results/{task_id}
 
 ### Client Implementation
 
-**Python Example**
+### Minimal Python client
 ```python
 import requests
 import time
 
 BASE_URL = "http://localhost:8000"
 
-# Submit document
-with open("document.pdf", "rb") as f:
+# 1) Submit document
+with open("dataset/1page.pdf", "rb") as f:
     response = requests.post(
         f"{BASE_URL}/api/v1/ocr/process",
-        files={"file": ("document.pdf", f, "application/pdf")}
+        files={"file": ("1page.pdf", f, "application/pdf")}
     )
     task_id = response.json()["task_id"]
 
-# Poll for results
+# 2) Poll until complete
 while True:
     result = requests.get(f"{BASE_URL}/api/v1/ocr/results/{task_id}")
     data = result.json()
     
     if data["status"] == "SUCCESS":
         detections = data["result"]["detections"]
-        print(f"Extracted {len(detections)} text elements")
+        print(f"Extracted {len(detections)} text detections")
+        print(detections[:3])  # first few detections
         break
     elif data["status"] == "FAILURE":
-        print(f"Processing failed: {data['result']['error']}")
+        print(f"Processing failed: {data.get('result', {}).get('error', 'Unknown error')}")
         break
     
     time.sleep(2)
 ```
 
-**Visualization Example**
+### Bounding box coordinates (important)
+
+To render boxes in the **correct place**, use the same pixel space as OCR:
+
+- `box` uses image pixel coordinates in `[x, y]` order
+- Origin is top-left: `(0, 0)` is top-left of the OCR input image
+- `page_number` is 1-based for PDFs
+- For PDFs in this service, each page is rendered at `fitz.Matrix(2, 2)` before OCR, so boxes align to the rendered page image (2x scale of PDF points)
+
+If your UI displays a resized image/canvas, scale bbox coordinates:
+
+```text
+scale_x = displayed_width  / original_image_width
+scale_y = displayed_height / original_image_height
+display_x = original_x * scale_x
+display_y = original_y * scale_y
+```
+
+### Correct overlay example (polygon-safe)
+
+Use polygons (not only axis-aligned rectangles) so rotated/skewed text still aligns:
+
 ```python
 import matplotlib.pyplot as plt
-import matplotlib.patches as patches
+from matplotlib.patches import Polygon
 from PIL import Image
 
 def visualize_detections(image_path, detections, page_number=1):
-    """Overlay bounding boxes on document image"""
-    img = Image.open(image_path)
+    img = Image.open(image_path).convert("RGB")
     fig, ax = plt.subplots(figsize=(12, 16))
     ax.imshow(img)
-    
+
     page_detections = [d for d in detections if d["page_number"] == page_number]
-    
     for detection in page_detections:
-        box = detection["box"]
-        xs, ys = zip(*box)
-        
-        rect = patches.Rectangle(
-            (min(xs), min(ys)), 
-            max(xs) - min(xs), 
-            max(ys) - min(ys),
-            linewidth=2, 
-            edgecolor='red', 
-            facecolor='none'
-        )
-        ax.add_patch(rect)
-        
+        points = detection["box"]  # [[x1,y1],[x2,y2],[x3,y3],[x4,y4]]
+
+        # Draw exact OCR polygon
+        poly = Polygon(points, closed=True, fill=False, edgecolor="red", linewidth=1.5)
+        ax.add_patch(poly)
+
+        # Label near first point
+        x0, y0 = points[0]
         ax.text(
-            min(xs), min(ys) - 5, 
-            detection["text"][:50], 
-            color='red', 
-            fontsize=8, 
-            backgroundcolor='white'
+            x0,
+            max(0, y0 - 3),
+            detection["text"][:50],
+            color="red",
+            fontsize=7,
+            backgroundcolor="white",
         )
-    
+
     ax.set_title(f"Page {page_number} - {len(page_detections)} detections")
-    plt.axis('off')
+    ax.axis("off")
+    plt.tight_layout()
     plt.show()
 ```
+
+### Quick sanity check for alignment
+
+1. Call OCR and get `detections`
+2. Render overlay on the exact same source image used for OCR
+3. Confirm words and polygons line up visually
+4. If they drift, verify:
+   - image was resized after OCR (apply `scale_x`, `scale_y`)
+   - wrong PDF page image scale was used
+   - coordinates were rounded/truncated too early
 
 ## 🔧 Configuration
 
