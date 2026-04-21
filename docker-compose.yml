@@ -18,6 +18,7 @@ services:
     command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
     volumes:
       - ./src:/home/app/src # Mount local src for hot-reloading
+      - paddlex_cache:/root/.paddlex
     ports:
       - "8000:8000"
     depends_on:
@@ -29,9 +30,13 @@ services:
   worker:
     build: .
     container_name: celery_worker
-    command: celery -A src.tasks.celery_app worker --loglevel=info --concurrency=2 -P prefork
+    command:
+      - /bin/sh
+      - -c
+      - python -m src.tasks.warmup && celery -A src.tasks.celery_app worker --loglevel=info --concurrency=2 -P prefork
     volumes:
       - ./src:/home/app/src
+      - paddlex_cache:/root/.paddlex
     depends_on:
       - redis
     env_file:
@@ -46,3 +51,4 @@ services:
 
 volumes:
   redis_data:
+  paddlex_cache:

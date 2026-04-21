@@ -1,4 +1,5 @@
-FROM paddlepaddle/paddle:3.3.0-gpu-cuda12.6-cudnn9.5
+FROM paddlepaddle/paddle:3.1.0-gpu-cuda12.6-cudnn9.5
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     libgl1-mesa-glx \
